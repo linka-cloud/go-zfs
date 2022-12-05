@@ -4,3 +4,4 @@ go-zfs.test
 
 # added by lint-install
 out/
+.idea

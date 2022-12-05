@@ -1,14 +1,13 @@
 package zfs_test
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
+	"strconv"
 	"testing"
 
-	zfs "github.com/mistifyio/go-zfs/v3"
+	"github.com/mistifyio/go-zfs/v3"
 )
 
 func TestDatasets(t *testing.T) {
@@ -43,8 +42,8 @@ func TestDatasetGetProperty(t *testing.T) {
 	// creation should be a time stamp with spaces in it
 	prop, err = ds.GetProperty("creation")
 	ok(t, err)
-	if len(strings.Fields(prop)) != 5 {
-		t.Errorf("expected a string with spaces in it, got: %v", prop)
+	if _, err := strconv.Atoi(prop); err != nil {
+		t.Errorf("creation property is not a number: %s", prop)
 	}
 }
 
@@ -189,7 +188,7 @@ func TestSendSnapshot(t *testing.T) {
 	s, err := f.Snapshot("test", false)
 	ok(t, err)
 
-	file, _ := ioutil.TempFile("/tmp/", "zfs-")
+	file, _ := os.CreateTemp("/tmp/", "zfs-")
 	defer file.Close()
 	err = file.Truncate(pow2(30))
 	ok(t, err)
@@ -276,6 +275,9 @@ func TestRollback(t *testing.T) {
 }
 
 func TestDiff(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skipf("TestDiff requires root")
+	}
 	defer setupZPool(t).cleanUp()
 
 	fs, err := zfs.CreateFilesystem("test/origin", nil)

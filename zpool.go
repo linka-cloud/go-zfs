@@ -16,6 +16,7 @@ const (
 // Zpool is a ZFS zpool.
 // A pool is a top-level structure in ZFS, and can contain many descendent datasets.
 type Zpool struct {
+	z             *zfs
 	Name          string
 	Health        string
 	Allocated     uint64
@@ -29,44 +30,43 @@ type Zpool struct {
 }
 
 // zpool is a helper function to wrap typical calls to zpool and ignores stdout.
-func zpool(arg ...string) error {
-	_, err := zpoolOutput(arg...)
+func (z *zfs) zpool(arg ...string) error {
+	_, err := z.zpoolOutput(arg...)
 	return err
 }
 
 // zpool is a helper function to wrap typical calls to zpool.
-func zpoolOutput(arg ...string) ([][]string, error) {
-	c := command{Command: "zpool"}
-	return c.Run(arg...)
+func (z *zfs) zpoolOutput(arg ...string) ([][]string, error) {
+	return z.run(nil, nil, "zpool", arg...)
 }
 
 // GetZpool retrieves a single ZFS zpool by name.
-func GetZpool(name string) (*Zpool, error) {
+func (z *zfs) GetZpool(name string) (*Zpool, error) {
 	args := zpoolArgs
 	args = append(args, name)
-	out, err := zpoolOutput(args...)
+	out, err := z.zpoolOutput(args...)
 	if err != nil {
 		return nil, err
 	}
 
-	z := &Zpool{Name: name}
+	pool := &Zpool{z: z, Name: name}
 	for _, line := range out {
-		if err := z.parseLine(line); err != nil {
+		if err := pool.parseLine(line); err != nil {
 			return nil, err
 		}
 	}
 
-	return z, nil
+	return pool, nil
 }
 
 // Datasets returns a slice of all ZFS datasets in a zpool.
 func (z *Zpool) Datasets() ([]*Dataset, error) {
-	return Datasets(z.Name)
+	return z.z.Datasets(z.Name)
 }
 
 // Snapshots returns a slice of all ZFS snapshots in a zpool.
 func (z *Zpool) Snapshots() ([]*Dataset, error) {
-	return Snapshots(z.Name)
+	return z.z.Snapshots(z.Name)
 }
 
 // CreateZpool creates a new ZFS zpool with the specified name, properties, and optional arguments.
@@ -74,7 +74,7 @@ func (z *Zpool) Snapshots() ([]*Dataset, error) {
 // A full list of available ZFS properties and command-line arguments may be found in the ZFS manual:
 // https://openzfs.github.io/openzfs-docs/man/7/zfsprops.7.html.
 // https://openzfs.github.io/openzfs-docs/man/8/zpool-create.8.html
-func CreateZpool(name string, properties map[string]string, args ...string) (*Zpool, error) {
+func (z *zfs) CreateZpool(name string, properties map[string]string, args ...string) (*Zpool, error) {
 	cli := make([]string, 1, 4)
 	cli[0] = "create"
 	if properties != nil {
@@ -82,23 +82,23 @@ func CreateZpool(name string, properties map[string]string, args ...string) (*Zp
 	}
 	cli = append(cli, name)
 	cli = append(cli, args...)
-	if err := zpool(cli...); err != nil {
+	if err := z.zpool(cli...); err != nil {
 		return nil, err
 	}
 
-	return &Zpool{Name: name}, nil
+	return &Zpool{z: z, Name: name}, nil
 }
 
 // Destroy destroys a ZFS zpool by name.
 func (z *Zpool) Destroy() error {
-	err := zpool("destroy", z.Name)
+	err := z.z.zpool("destroy", z.Name)
 	return err
 }
 
 // ListZpools list all ZFS zpools accessible on the current system.
-func ListZpools() ([]*Zpool, error) {
+func (z *zfs) ListZpools() ([]*Zpool, error) {
 	args := []string{"list", "-Ho", "name"}
-	out, err := zpoolOutput(args...)
+	out, err := z.zpoolOutput(args...)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func ListZpools() ([]*Zpool, error) {
 	var pools []*Zpool
 
 	for _, line := range out {
-		z, err := GetZpool(line[0])
+		z, err := z.GetZpool(line[0])
 		if err != nil {
 			return nil, err
 		}

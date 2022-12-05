@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -14,43 +13,34 @@ import (
 	"github.com/google/uuid"
 )
 
-type command struct {
-	Command string
-	Stdin   io.Reader
-	Stdout  io.Writer
-}
-
-func (c *command) Run(arg ...string) ([][]string, error) {
-	cmd := exec.Command(c.Command, arg...)
-
+func (z *zfs) run(in io.Reader, out io.Writer, cmd string, args ...string) ([][]string, error) {
 	var stdout, stderr bytes.Buffer
 
-	if c.Stdout == nil {
-		cmd.Stdout = &stdout
-	} else {
-		cmd.Stdout = c.Stdout
+	if z.sudo {
+		args = append([]string{cmd}, args...)
+		cmd = "sudo"
 	}
 
-	if c.Stdin != nil {
-		cmd.Stdin = c.Stdin
+	cmdOut := out
+	if cmdOut == nil {
+		cmdOut = &stdout
 	}
-	cmd.Stderr = &stderr
 
 	id := uuid.New().String()
-	joinedArgs := strings.Join(cmd.Args, " ")
+	joinedArgs := strings.Join(args, " ")
 
-	logger.Log([]string{"ID:" + id, "START", joinedArgs})
-	if err := cmd.Run(); err != nil {
+	z.logger.Log([]string{"ID:" + id, "START", joinedArgs})
+	if err := z.exec.Run(in, cmdOut, &stderr, cmd, args...); err != nil {
 		return nil, &Error{
 			Err:    err,
-			Debug:  strings.Join([]string{cmd.Path, joinedArgs[1:]}, " "),
+			Debug:  strings.Join([]string{cmd, joinedArgs}, " "),
 			Stderr: stderr.String(),
 		}
 	}
-	logger.Log([]string{"ID:" + id, "FINISH"})
+	z.logger.Log([]string{"ID:" + id, "FINISH"})
 
 	// assume if you passed in something for stdout, that you know what to do with it
-	if c.Stdout != nil {
+	if out != nil {
 		return nil, nil
 	}
 
@@ -278,13 +268,13 @@ func parseInodeChanges(lines [][]string) ([]*InodeChange, error) {
 	return changes, nil
 }
 
-func listByType(t, filter string) ([]*Dataset, error) {
+func (z *zfs) listByType(t, filter string) ([]*Dataset, error) {
 	args := []string{"list", "-rHp", "-t", t, "-o", dsPropListOptions}
 
 	if filter != "" {
 		args = append(args, filter)
 	}
-	out, err := zfsOutput(args...)
+	out, err := z.doOutput(args...)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +286,7 @@ func listByType(t, filter string) ([]*Dataset, error) {
 	for _, line := range out {
 		if name != line[0] {
 			name = line[0]
-			ds = &Dataset{Name: name}
+			ds = &Dataset{z: z, Name: name}
 			datasets = append(datasets, ds)
 		}
 		if err := ds.parseLine(line); err != nil {

@@ -2,14 +2,16 @@ package zfs_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/mistifyio/go-zfs/v3"
 )
@@ -67,7 +69,31 @@ func (f cleanUpFunc) cleanUp() {
 func setupZPool(t *testing.T) cleanUpFunc {
 	t.Helper()
 
-	d, err := ioutil.TempDir("/tmp/", "zfs-test-*")
+	var opts []zfs.Option
+	var client *ssh.Client
+	if os.Getenv("ZFS_TEST_SSH") != "" {
+		h, err := os.UserHomeDir()
+		ok(t, err)
+		f, err := os.ReadFile(filepath.Join(h, ".ssh", "id_rsa"))
+		ok(t, err)
+		key, err := ssh.ParsePrivateKey(f)
+		ok(t, err)
+		client, err = ssh.Dial("tcp", "127.0.0.1:22", &ssh.ClientConfig{
+			User:            "root",
+			Auth:            []ssh.AuthMethod{ssh.PublicKeys(key)},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		})
+		ok(t, err)
+		opts = append(opts, zfs.WithExecutor(zfs.NewSSHExecutor(client)))
+	}
+	if _, err := exec.LookPath("sudo"); err == nil && os.Geteuid() != 0 {
+		opts = append(opts, zfs.WithSudo())
+	}
+	z, err := zfs.New(opts...)
+	ok(t, err)
+	zfs.SetDefault(z)
+
+	d, err := os.MkdirTemp("/tmp/", "zfs-test-*")
 	ok(t, err)
 
 	var skipRemoveAll bool
@@ -80,7 +106,7 @@ func setupZPool(t *testing.T) cleanUpFunc {
 
 	tempfiles := make([]string, 3)
 	for i := range tempfiles {
-		f, err := ioutil.TempFile(d, fmt.Sprintf("loop%d", i))
+		f, err := os.CreateTemp(d, fmt.Sprintf("loop%d", i))
 		ok(t, err)
 
 		ok(t, f.Truncate(pow2(30)))
@@ -96,5 +122,8 @@ func setupZPool(t *testing.T) cleanUpFunc {
 	return func() {
 		ok(t, pool.Destroy())
 		os.RemoveAll(d)
+		if client != nil {
+			client.Close()
+		}
 	}
 }
