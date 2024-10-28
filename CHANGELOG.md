@@ -127,7 +127,7 @@ This change log follows the advice of [Keep a CHANGELOG](https://github.com/oliv
       remove command name from joined args
 
     Sebastiaan van Stijn (1):
-      Add go.mod and rename to github.com/mistifyio/go-zfs/v3 (v3.0.0)
+      Add go.mod and rename to go.linka.cloud/go-zfs/v3 (v3.0.0)
 
     mikudeko (1):
       Fix GetProperty always returning 'VALUE'

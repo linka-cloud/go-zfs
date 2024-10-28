@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/mistifyio/go-zfs/v3"
+	"go.linka.cloud/go-zfs/v3"
 )
 
 func TestDatasets(t *testing.T) {

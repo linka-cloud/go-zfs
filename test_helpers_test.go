@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/mistifyio/go-zfs/v3"
+	"go.linka.cloud/go-zfs/v3"
 )
 
 func sleep(delay int) {

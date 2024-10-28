@@ -1,4 +1,4 @@
-module github.com/mistifyio/go-zfs/v3
+module go.linka.cloud/go-zfs/v3
 
 go 1.14
 
