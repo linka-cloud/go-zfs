@@ -327,6 +327,26 @@ func (d *Dataset) SetProperty(key, val string) error {
 	return err
 }
 
+// SetProperties sets multiple ZFS properties on the receiving dataset.
+//
+// A full list of available ZFS properties may be found in the ZFS manual:
+// https://openzfs.github.io/openzfs-docs/man/7/zfsprops.7.html.
+func (d *Dataset) SetProperties(keyValPairs ...string) error {
+	if len(keyValPairs) == 0 {
+		return nil
+	}
+	if len(keyValPairs)%2 != 0 {
+		return errors.New("keyValPairs must be an even number of strings")
+	}
+	args := []string{"set"}
+	for i := 0; i < len(keyValPairs); i += 2 {
+		args = append(args, strings.Join(keyValPairs[i:i+2], "="))
+	}
+	args = append(args, d.Name)
+	err := d.z.do(args...)
+	return err
+}
+
 // GetProperty returns the current value of a ZFS property from the receiving dataset.
 //
 // A full list of available ZFS properties may be found in the ZFS manual:
@@ -338,6 +358,41 @@ func (d *Dataset) GetProperty(key string) (string, error) {
 	}
 
 	return out[0][2], nil
+}
+
+// GetProperties returns the current values of multiple ZFS properties from the receiving dataset.
+//
+// A full list of available ZFS properties may be found in the ZFS manual:
+// https://openzfs.github.io/openzfs-docs/man/7/zfsprops.7.html.
+func (d *Dataset) GetProperties(keys ...string) ([]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	out, err := d.z.doOutput("get", "-H", "-p", strings.Join(keys, ","), d.Name)
+	if err != nil {
+		return nil, err
+	}
+	var props []string
+	for _, v := range out {
+		props = append(props, v[2])
+	}
+	return props, nil
+}
+
+// GetAllProperties returns all the ZFS properties from the receiving dataset.
+//
+// A full list of available ZFS properties may be found in the ZFS manual:
+// https://openzfs.github.io/openzfs-docs/man/7/zfsprops.7.html.
+func (d *Dataset) GetAllProperties() (map[string]string, error) {
+	out, err := d.z.doOutput("get", "-H", "-p", "all", d.Name)
+	if err != nil {
+		return nil, err
+	}
+	props := make(map[string]string)
+	for _, v := range out {
+		props[v[1]] = v[2]
+	}
+	return props, nil
 }
 
 // Rename renames a dataset.
