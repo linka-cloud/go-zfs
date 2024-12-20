@@ -14,13 +14,13 @@ type localExec struct{}
 func (l *localExec) Run(stdin io.Reader, stdout io.Writer, stderr io.Writer, cmd string, args ...string) error {
 	c := exec.Command(cmd, args...)
 	if stdin != nil {
-        c.Stdin = stdin
-    }
+		c.Stdin = stdin
+	}
 	if stdout != nil {
-        c.Stdout = stdout
-    }
+		c.Stdout = stdout
+	}
 	if stderr != nil {
-        c.Stderr = stderr
-    }
+		c.Stderr = stderr
+	}
 	return c.Run()
 }

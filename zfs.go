@@ -126,8 +126,8 @@ func New(opts ...Option) (ZFS, error) {
 }
 
 type zfs struct {
-	exec Executor
-	sudo bool
+	exec   Executor
+	sudo   bool
 	logger Logger
 }
 
