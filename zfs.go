@@ -36,6 +36,8 @@ type Dataset struct {
 	Usedbydataset uint64
 	Quota         uint64
 	Referenced    uint64
+
+	props map[string]string
 }
 
 // InodeType is the type of inode as reported by Diff.
@@ -169,19 +171,13 @@ func (z *zfs) Volumes(filter string) ([]*Dataset, error) {
 // GetDataset retrieves a single ZFS dataset by name.
 // This dataset could be any valid ZFS dataset type, such as a clone, filesystem, snapshot, or volume.
 func (z *zfs) GetDataset(name string) (*Dataset, error) {
-	out, err := z.doOutput("list", "-Hp", "-o", dsPropListOptions, name)
+	out, err := z.doOutput("list", "-p", "-o", "all", name)
 	if err != nil {
 		return nil, err
 	}
 
-	ds := &Dataset{z: z, Name: name}
-	for _, line := range out {
-		if err := ds.parseLine(line); err != nil {
-			return nil, err
-		}
-	}
-
-	return ds, nil
+	ds := &Dataset{z: z, Name: name, props: make(map[string]string)}
+	return ds, ds.parseProps(out)
 }
 
 // Clone clones a ZFS snapshot and returns a clone dataset.
@@ -328,8 +324,11 @@ func (d *Dataset) Destroy(flags DestroyFlag) error {
 // https://openzfs.github.io/openzfs-docs/man/7/zfsprops.7.html.
 func (d *Dataset) SetProperty(key, val string) error {
 	prop := strings.Join([]string{key, val}, "=")
-	err := d.z.do("set", prop, d.Name)
-	return err
+	if err := d.z.do("set", prop, d.Name); err != nil {
+		return err
+	}
+	d.props[strings.ToLower(key)] = val
+	return nil
 }
 
 // SetProperties sets multiple ZFS properties on the receiving dataset.
@@ -344,12 +343,19 @@ func (d *Dataset) SetProperties(keyValPairs ...string) error {
 		return errors.New("keyValPairs must be an even number of strings")
 	}
 	args := []string{"set"}
+	props := make(map[string]string)
 	for i := 0; i < len(keyValPairs); i += 2 {
+		props[strings.ToLower(keyValPairs[i])] = keyValPairs[i+1]
 		args = append(args, strings.Join(keyValPairs[i:i+2], "="))
 	}
 	args = append(args, d.Name)
-	err := d.z.do(args...)
-	return err
+	if err := d.z.do(args...); err != nil {
+		return err
+	}
+	for k, v := range props {
+		d.props[k] = v
+	}
+	return nil
 }
 
 // GetProperty returns the current value of a ZFS property from the receiving dataset.
@@ -357,6 +363,13 @@ func (d *Dataset) SetProperties(keyValPairs ...string) error {
 // A full list of available ZFS properties may be found in the ZFS manual:
 // https://openzfs.github.io/openzfs-docs/man/7/zfsprops.7.html.
 func (d *Dataset) GetProperty(key string) (string, error) {
+	if v, ok := d.props[strings.ToLower(key)]; ok {
+		return v, nil
+	}
+	// custom properties does not return error
+	if strings.Contains(key, ":") {
+		return "-", nil
+	}
 	out, err := d.z.doOutput("get", "-H", "-p", key, d.Name)
 	if err != nil {
 		return "", err
@@ -373,11 +386,25 @@ func (d *Dataset) GetProperties(keys ...string) ([]string, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
+	props, failed := make([]string, 0, len(keys)), false
+	for _, v := range keys {
+		val, ok := d.props[strings.ToLower(v)]
+		if failed = !ok && !strings.Contains(v, ":"); failed {
+			props = make([]string, 0, len(keys))
+			break
+		}
+		if val == "" {
+			val = "-"
+		}
+		props = append(props, val)
+	}
+	if !failed {
+		return props, nil
+	}
 	out, err := d.z.doOutput("get", "-H", "-p", strings.Join(keys, ","), d.Name)
 	if err != nil {
 		return nil, err
 	}
-	var props []string
 	for _, v := range out {
 		props = append(props, v[2])
 	}
@@ -489,7 +516,7 @@ func (d *Dataset) Children(depth uint64) ([]*Dataset, error) {
 	} else {
 		args = append(args, "-r")
 	}
-	args = append(args, "-t", "all", "-Hp", "-o", dsPropListOptions)
+	args = append(args, "-t", "all", "-p", "-o", "all")
 	args = append(args, d.Name)
 
 	out, err := d.z.doOutput(args...)
@@ -497,16 +524,20 @@ func (d *Dataset) Children(depth uint64) ([]*Dataset, error) {
 		return nil, err
 	}
 
+	if len(out) == 0 {
+		return nil, nil
+	}
+
 	var datasets []*Dataset
 	name := ""
 	var ds *Dataset
-	for _, line := range out {
+	for _, line := range out[1:] {
 		if name != line[0] {
 			name = line[0]
-			ds = &Dataset{z: d.z, Name: name}
+			ds = &Dataset{z: d.z, Name: name, props: make(map[string]string)}
 			datasets = append(datasets, ds)
 		}
-		if err := ds.parseLine(line); err != nil {
+		if err := ds.parseProps([][]string{out[0], line}); err != nil {
 			return nil, err
 		}
 	}
