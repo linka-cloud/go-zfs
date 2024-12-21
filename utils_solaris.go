@@ -7,7 +7,7 @@ import "strings"
 
 var (
 	// List of ZFS properties to retrieve from zfs list command on a Solaris platform
-	dsPropList = []string{"name", "origin", "used", "available", "mountpoint", "compression", "type", "volsize", "quota", "referenced"}
+	dsPropList = []string{"name", "origin", "used", "avail", "mountpoint", "compression", "type", "volsize", "quota", "referenced"}
 
 	dsPropListOptions = strings.Join(dsPropList, ",")
 

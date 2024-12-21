@@ -51,7 +51,7 @@ func (z *zfs) run(in io.Reader, out io.Writer, cmd string, args ...string) ([][]
 	output := make([][]string, len(lines))
 
 	for i, l := range lines {
-		output[i] = strings.Split(l, "\t")
+		output[i] = strings.Fields(l)
 	}
 
 	return output, nil
@@ -78,33 +78,44 @@ func setUint(field *uint64, value string) error {
 	return nil
 }
 
-func (d *Dataset) parseLine(line []string) error {
+func (d *Dataset) parseProps(out [][]string) error {
 	var err error
 
-	if len(line) != len(dsPropList) {
+	if len(out) != 2 {
 		return errors.New("output does not match what is expected on this platform")
 	}
-	setString(&d.Name, line[0])
-	setString(&d.Origin, line[1])
-
-	if err = setUint(&d.Used, line[2]); err != nil {
-		return err
-	}
-	if err = setUint(&d.Avail, line[3]); err != nil {
-		return err
+	for i, v := range out[0] {
+		val := "-"
+		if i < len(out[1]) {
+			val = out[1][i]
+		}
+		d.props[strings.ToLower(v)] = val
 	}
 
-	setString(&d.Mountpoint, line[4])
-	setString(&d.Compression, line[5])
-	setString(&d.Type, line[6])
+	if len(d.props) <= len(dsPropList) {
+		return errors.New("output does not match what is expected on this platform")
+	}
+	setString(&d.Name, d.props["name"])
+	setString(&d.Origin, d.props["origin"])
 
-	if err = setUint(&d.Volsize, line[7]); err != nil {
+	if err = setUint(&d.Used, d.props["used"]); err != nil {
 		return err
 	}
-	if err = setUint(&d.Quota, line[8]); err != nil {
+	if err = setUint(&d.Avail, d.props["avail"]); err != nil {
 		return err
 	}
-	if err = setUint(&d.Referenced, line[9]); err != nil {
+
+	setString(&d.Mountpoint, d.props["mountpoint"])
+	setString(&d.Compression, d.props["compress"])
+	setString(&d.Type, d.props["type"])
+
+	if err = setUint(&d.Volsize, d.props["volsize"]); err != nil {
+		return err
+	}
+	if err = setUint(&d.Quota, d.props["quota"]); err != nil {
+		return err
+	}
+	if err = setUint(&d.Referenced, d.props["refer"]); err != nil {
 		return err
 	}
 
@@ -112,13 +123,16 @@ func (d *Dataset) parseLine(line []string) error {
 		return nil
 	}
 
-	if err = setUint(&d.Written, line[10]); err != nil {
+	if err = setUint(&d.Written, d.props["written"]); err != nil {
 		return err
 	}
-	if err = setUint(&d.Logicalused, line[11]); err != nil {
+	if err = setUint(&d.Logicalused, d.props["lused"]); err != nil {
 		return err
 	}
-	return setUint(&d.Usedbydataset, line[12])
+	if err = setUint(&d.Usedbydataset, d.props["usedds"]); err != nil {
+		return err
+	}
+	return nil
 }
 
 /*
@@ -269,7 +283,7 @@ func parseInodeChanges(lines [][]string) ([]*InodeChange, error) {
 }
 
 func (z *zfs) listByType(t, filter string) ([]*Dataset, error) {
-	args := []string{"list", "-rHp", "-t", t, "-o", dsPropListOptions}
+	args := []string{"list", "-rp", "-t", t, "-o", "all"}
 
 	if filter != "" {
 		args = append(args, filter)
@@ -279,17 +293,21 @@ func (z *zfs) listByType(t, filter string) ([]*Dataset, error) {
 		return nil, err
 	}
 
+	if len(out) == 0 {
+		return nil, nil
+	}
+
 	var datasets []*Dataset
 
 	name := ""
 	var ds *Dataset
-	for _, line := range out {
+	for _, line := range out[1:] {
 		if name != line[0] {
 			name = line[0]
-			ds = &Dataset{z: z, Name: name}
+			ds = &Dataset{z: z, Name: name, props: make(map[string]string)}
 			datasets = append(datasets, ds)
 		}
-		if err := ds.parseLine(line); err != nil {
+		if err := ds.parseProps([][]string{out[0], line}); err != nil {
 			return nil, err
 		}
 	}
