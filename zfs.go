@@ -103,7 +103,7 @@ type ZFS interface {
 	Filesystems(filter string) ([]*Dataset, error)
 	Volumes(filter string) ([]*Dataset, error)
 	GetDataset(name string) (*Dataset, error)
-	ReceiveSnapshot(input io.Reader, name string) (*Dataset, error)
+	ReceiveSnapshot(input io.Reader, name string, force ...bool) (*Dataset, error)
 	CreateVolume(name string, size uint64, properties map[string]string) (*Dataset, error)
 	CreateFilesystem(name string, properties map[string]string) (*Dataset, error)
 	ListZpools() ([]*Zpool, error)
@@ -243,8 +243,13 @@ func (d *Dataset) Mount(overlay bool, options []string) (*Dataset, error) {
 
 // ReceiveSnapshot receives a ZFS stream from the input io.Reader.
 // A new snapshot is created with the specified name, and streams the input data into the newly-created snapshot.
-func (z *zfs) ReceiveSnapshot(input io.Reader, name string) (*Dataset, error) {
-	if _, err := z.run(input, nil, "zfs", "receive", name); err != nil {
+func (z *zfs) ReceiveSnapshot(input io.Reader, name string, force ...bool) (*Dataset, error) {
+	args := []string{"receive"}
+	if len(force) > 0 && force[0] {
+		args = append(args, "-F")
+	}
+	args = append(args, name)
+	if _, err := z.run(input, nil, "zfs", args...); err != nil {
 		return nil, err
 	}
 	return z.GetDataset(name)

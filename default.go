@@ -34,8 +34,8 @@ func Volumes(filter string) ([]*Dataset, error) {
 func GetDataset(name string) (*Dataset, error) {
 	return z.GetDataset(name)
 }
-func ReceiveSnapshot(input io.Reader, name string) (*Dataset, error) {
-	return z.ReceiveSnapshot(input, name)
+func ReceiveSnapshot(input io.Reader, name string, force ...bool) (*Dataset, error) {
+	return z.ReceiveSnapshot(input, name, force...)
 }
 func CreateVolume(name string, size uint64, properties map[string]string) (*Dataset, error) {
 	return z.CreateVolume(name, size, properties)
